@@ -1,0 +1,52 @@
+name = "frothy-synth"
+version = "0.0.1"
+boards = ["esp32_devkit_v1", "seeed_xiao_esp32s3"]
+
+[extension]
+sources = [
+  "native/synth.c",
+  "vendor/amy/src/algorithms.c",
+  "vendor/amy/src/amy.c",
+  "vendor/amy/src/envelope.c",
+  "vendor/amy/src/parse.c",
+  "vendor/amy/src/filters.c",
+  "vendor/amy/src/oscillators.c",
+  "vendor/amy/src/pcm.c",
+  "vendor/amy/src/interp_partials.c",
+  "vendor/amy/src/custom.c",
+  "vendor/amy/src/delay.c",
+  "vendor/amy/src/log2_exp2.c",
+  "vendor/amy/src/patches.c",
+  "vendor/amy/src/transfer.c",
+  "vendor/amy/src/sequencer.c",
+  "vendor/amy/src/instrument.c",
+  "vendor/amy/src/amy_midi.c",
+  "vendor/amy/src/api.c",
+  "vendor/amy/src/midi_mappings.c",
+  "vendor/amy/src/cv_trigger.c",
+]
+
+[[natives]]
+name = "synth.start"
+arity = 4
+c_function = "fr_lib_synth_start"
+
+[[natives]]
+name = "synth.stop"
+arity = 0
+c_function = "fr_lib_synth_stop"
+
+[[natives]]
+name = "synth.running?"
+arity = 0
+c_function = "fr_lib_synth_running"
+
+[[natives]]
+name = "synth.now"
+arity = 0
+c_function = "fr_lib_synth_now"
+
+[[natives]]
+name = "synth.sine-at"
+arity = 4
+c_function = "fr_lib_synth_sine_at"

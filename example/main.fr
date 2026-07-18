@@ -1,0 +1,2 @@
+-- Start from the serial prompt after choosing three free I2S output pins.
+-- The README gives the exact commands because the pins depend on the wiring.

@@ -1,0 +1,4 @@
+-- The first hardware spike exposes one scheduled oscillator. Broader AMY
+-- control belongs here only after timing and memory measurements earn it.
+
+to synth.sine with oscillator, hz, level [ here now is synth.now:; synth.sine-at: now, oscillator, hz, level ]

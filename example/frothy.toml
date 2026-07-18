@@ -1,0 +1,5 @@
+name = "frothy-synth-example"
+board = "seeed_xiao_esp32s3"
+
+[deps]
+frothy-synth = { path = ".." }
