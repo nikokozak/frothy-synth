@@ -499,6 +499,12 @@ void filters_deinit(uint8_t bus) {
 void filters_init(uint8_t bus) {
     SAMPLE ***p_eq_coeffs = &amy_global.bus[bus]->eq.eq_coeffs;
     SAMPLE ****p_eq_delay = &amy_global.bus[bus]->eq.eq_delay;
+    // amy_start runs buses_reset twice (global_init, then amy_reset_oscs via
+    // oscs_init), and RESET_AMY events re-run it at runtime; each bus_reset
+    // re-enters filters_init. Without this guard the previous EQ allocation
+    // set is orphaned (~1 KiB leaked per re-entry). filters_deinit NULLs the
+    // pointers, so the guard is idempotent.
+    if (*p_eq_coeffs != NULL) filters_deinit(bus);
     *p_eq_coeffs = malloc_caps(sizeof(SAMPLE*)*3, amy_global.config.ram_caps_fbl);
     *p_eq_delay = malloc_caps(sizeof(SAMPLE**)*AMY_NCHANS, amy_global.config.ram_caps_fbl);
     for(uint16_t i=0;i<3;i++) {
