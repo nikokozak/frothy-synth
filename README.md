@@ -20,11 +20,15 @@ AMY 1.2.72 is vendored from commit
 `720f7707bb1c73fbfdb7f4e6a0fd8745a418dbd8` under `vendor/amy`. Its MIT
 license is included there; Frothy Synth is also MIT-licensed. Frothy's vendor
 changes avoid AMY's 16 KiB SysEx allocation when MIDI is disabled and replace
-its built-in PCM samples, piano partials, and saw tables with inert stubs that
-this first surface cannot reach.
+its built-in PCM samples, piano partials, saw tables, and 391-entry factory
+patch bank (~137 KiB of flash strings) with inert stubs that this first
+surface cannot reach.
 This build also hard-clips instead of carrying AMY's soft-clipping lookup table.
 Its stop path releases AMY's queue mutex and patch bookkeeping so the engine can
-be restarted without those two upstream leaks.
+be restarted without those two upstream leaks; filters_init is additionally
+re-entrant (upstream leaks ~1 KiB per engine restart), and the delta pool's
+first block is 256 entries instead of 2048 so startup fits the classic ESP32's
+largest free heap block.
 The hot path remains in IRAM on ESP32S3; the classic ESP32 renders from flash
 because Frothy's BLE-enabled image has insufficient IRAM, so its jitter must be
 measured on hardware.
@@ -42,10 +46,18 @@ The C extension must be built into firmware:
 
 ```sh
 FROTHY_SOURCE_ROOT=/path/to/Frothy/core frothy build --project example
-frothy flash seeed_xiao_esp32s3 --port /dev/cu.usbmodemXXXX
+cd /path/to/Frothy/core/build/<board> && \
+  python -m esptool --chip <chip> -p /dev/cu.usbmodemXXXX -b 460800 \
+  --before default_reset --after hard_reset write_flash "@flash_args"
 frothy install --project example --port /dev/cu.usbmodemXXXX
 frothy connect --port /dev/cu.usbmodemXXXX
 ```
+
+Do not flash with `frothy flash <board>`: from a source checkout it rebuilds
+the checkout kernel-only, replacing the project image you just built, and the
+board ends up without the synth natives (`synth.start` reports `not found`).
+Flash the project build directly with esptool as above (the build prints the
+exact command).
 
 ## Play one oscillator
 
@@ -76,16 +88,26 @@ instead of silently wrapping into AMY's larger clock. AMY currently applies
 scheduled changes at render-block boundaries; the default 256-sample block is
 about 5.8 ms.
 
-## Measure the spike
+## Measured on hardware (ESP32 DevKit V1, 2026-07-22)
 
-Before and after `synth.start`, run `:mem heap` and record `heap.free` and
-`heap.largest`. Then check:
+Before and after `synth.start`, run `mem heap` and record `heap.free` and
+`heap.largest`. Results from the first hardware pass:
 
-- 8, 16, and 32 oscillator capacities.
-- audible glitches while editing Frothy and while BLE/Wi-Fi are active.
-- ten start/play/stop cycles with heap returning to its starting value.
-- scheduled onset timing at the analog or I2S output.
+- Flash: the library adds ~103 KiB to the image. With the default profile
+  (BLE + Wi-Fi on) the image is ~1,407 KiB (8% app-partition headroom); with
+  both radios gated off it is ~536 KiB (65% free).
+- Heap: `synth.start` costs ~66 KiB (16 KiB task stack, 5 KiB delta pool,
+  ~6.5 KiB I2S DMA, the rest AMY). Capacity 8/16/32 costs nearly the same at
+  start — oscillators allocate lazily on first use. With radios on, ~30 KiB
+  remains free while running; with radios off, ~103 KiB.
+- Stability: 20 start/stop cycles with zero heap drift; scheduled two-
+  oscillator playback via `synth.sine-at` works.
 
-AMY's startup allocations are not yet reported safely to Frothy. An
-out-of-memory start can reset the board. Do not treat this spike as a usable
-instrument library until checked startup and the hardware measurements exist.
+Still unmeasured: audible glitches while editing and while BLE/Wi-Fi are
+active, jitter of the flash-resident render path, and scheduled onset timing
+at the output — these need a DAC, ears, and a scope.
+
+AMY's startup allocations are still not reported safely to Frothy: a start
+that cannot fit fails with a capacity error when task creation fails, but an
+allocation failure inside AMY itself can abort. Treat oscillator counts near
+the heap limit with care.
