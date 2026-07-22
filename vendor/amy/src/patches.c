@@ -2,7 +2,8 @@
 // baked in AMY string patches (Juno-6 & DX7 for now)
 
 #include "amy.h"
-#include "patches.h"
+// Frothy ships no built-in patch bank; see patches_tiny.h.
+#include "patches_tiny.h"
 
 #include <assert.h>   // for buffer overruns in sprint_event.
 
