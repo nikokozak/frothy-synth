@@ -1,5 +1,5 @@
 name = "frothy-synth"
-version = "0.2.2"
+version = "0.2.3"
 boards = ["esp32_devkit_v1", "seeed_xiao_esp32s3"]
 
 [extension]

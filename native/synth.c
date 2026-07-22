@@ -51,6 +51,9 @@ static const uint8_t fr_synth_filters[FR_SYNTH_MAX_FILTER + 1] = {
 
 static bool fr_synth_started;
 static uint16_t fr_synth_max_oscs;
+static fr_int_t fr_synth_bclk;
+static fr_int_t fr_synth_ws;
+static fr_int_t fr_synth_dout;
 static atomic_bool fr_synth_audio_running;
 static atomic_int fr_synth_audio_error;
 static i2s_chan_handle_t fr_synth_i2s;
@@ -159,13 +162,21 @@ fr_err_t fr_lib_synth_start(fr_runtime_t *runtime, const fr_tagged_t *args,
   amy_config_t config;
 
   FR_TRY(fr_synth_check_call(runtime, args, arg_count, 4, out));
-  if (fr_synth_started) {
-    return FR_ERR_INVALID;
-  }
   FR_TRY(fr_synth_decode_int(args, 0, &bclk));
   FR_TRY(fr_synth_decode_int(args, 1, &ws));
   FR_TRY(fr_synth_decode_int(args, 2, &dout));
   FR_TRY(fr_synth_decode_int(args, 3, &max_oscs));
+  if (fr_synth_started) {
+    /* Re-running a setup script must not error: an identical start is a
+     * no-op. A different configuration needs a stop first -- "busy" names
+     * the actual condition (the engine is running with other settings). */
+    if (bclk == fr_synth_bclk && ws == fr_synth_ws && dout == fr_synth_dout &&
+        max_oscs == (fr_int_t)fr_synth_max_oscs) {
+      *out = fr_tagged_nil();
+      return FR_OK;
+    }
+    return FR_ERR_BUSY;
+  }
   if (!GPIO_IS_VALID_OUTPUT_GPIO(bclk) || !GPIO_IS_VALID_OUTPUT_GPIO(ws) ||
       !GPIO_IS_VALID_OUTPUT_GPIO(dout) || bclk == ws || bclk == dout ||
       ws == dout || max_oscs < FR_SYNTH_MIN_OSCS ||
@@ -209,6 +220,9 @@ fr_err_t fr_lib_synth_start(fr_runtime_t *runtime, const fr_tagged_t *args,
   }
 
   fr_synth_max_oscs = (uint16_t)max_oscs;
+  fr_synth_bclk = bclk;
+  fr_synth_ws = ws;
+  fr_synth_dout = dout;
   fr_synth_started = true;
   *out = fr_tagged_nil();
   return FR_OK;

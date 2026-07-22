@@ -48,9 +48,13 @@ amplitude). Waves: **0** sine, **1** triangle, **2** saw, **3** pulse,
 **0** off, **1** low-pass, **2** band-pass, **3** high-pass; resonance is
 milli-Q — 700 is neutral, 2000+ rings.
 
-Errors: out-of-range arguments return `bad value`; any word before
-`synth.start` returns `invalid`; a start that cannot fit in RAM returns
-`capacity exceeded` and leaves the board running. If `synth.stop` ever
+Errors: out-of-range arguments return `bad value`. Re-running `synth.start`
+with the running engine's exact settings is a no-op; with different settings
+it returns `busy` — stop first. Any other word before `synth.start` returns
+error 8, which the REPL currently prints as `bad source` (a core error-name
+collision with the compiler; the line itself is fine — start the engine).
+A start that cannot fit in RAM returns `capacity exceeded` and leaves the
+board running. If `synth.stop` ever
 returns `io error` (audio task missed its deadline), call `synth.stop:`
 again — the retry completes the teardown. Scheduled events are queued in
 RAM (a few dozen bytes each): scheduling more than the heap holds drops the
