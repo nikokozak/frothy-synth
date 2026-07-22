@@ -51,8 +51,8 @@ milli-Q — 700 is neutral, 2000+ rings.
 Errors: out-of-range arguments return `bad value`. Re-running `synth.start`
 with the running engine's exact settings is a no-op; with different settings
 it returns `busy` — stop first. Any other word before `synth.start` returns
-error 8, which the REPL currently prints as `bad source` (a core error-name
-collision with the compiler; the line itself is fine — start the engine).
+error 8, printed `invalid` (core releases up to v0.1.8 print it `bad
+source`; the line itself is fine — start the engine).
 A start that cannot fit in RAM returns `capacity exceeded` and leaves the
 board running. If `synth.stop` ever
 returns `io error` (audio task missed its deadline), call `synth.stop:`
