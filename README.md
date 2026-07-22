@@ -3,8 +3,8 @@
 A polyphonic subtractive synthesizer for Frothy on ESP32-class boards, built
 on [AMY](https://github.com/shorepine/amy). One engine, up to 32 oscillators,
 44.1 kHz stereo 16-bit audio over I2S. Every note is either immediate or
-scheduled against a sample-accurate millisecond clock, so melodies and
-sequences are ordinary Frothy words.
+scheduled against a sample-derived millisecond clock (block resolution,
+~5.8 ms), so melodies and sequences are ordinary Frothy words.
 
 Boards: `esp32_devkit_v1`, `seeed_xiao_esp32s3`. Dual-core only — the audio
 task owns core 1.
@@ -52,7 +52,10 @@ Errors: out-of-range arguments return `bad value`; any word before
 `synth.start` returns `invalid`; a start that cannot fit in RAM returns
 `capacity exceeded` and leaves the board running. If `synth.stop` ever
 returns `io error` (audio task missed its deadline), call `synth.stop:`
-again — the retry completes the teardown.
+again — the retry completes the teardown. Scheduled events are queued in
+RAM (~20 bytes each): scheduling more than the heap holds drops the excess
+with a `deltas:` line on serial and keeps playing — hundreds of pending
+events are fine, thousands are not. `synth.stop` reclaims everything.
 
 ## Examples
 
@@ -124,9 +127,10 @@ build prints the exact command).
 
 ## Measured (ESP32 DevKit V1)
 
-- Flash: the library adds ~120 KiB. With BLE and Wi-Fi gated off the whole
-  image is ~554 KiB (64% app-partition headroom); with both radios on,
-  roughly 1.4 MiB (~7% headroom).
+- Flash: the library adds ~120 KiB. Against the 2 MiB app partition (core
+  releases after the flash-floor raise), the whole image is ~554 KiB with
+  BLE and Wi-Fi gated off (74% headroom) and ~1,425 KiB with both radios on
+  (32%). On the older 1.5 MiB partition those become 64% and 7%.
 - Heap: `synth.start` costs ~66 KiB (16 KiB task stack, 5 KiB event pool,
   ~6.5 KiB I2S DMA, the rest AMY). Capacity 8/16/32 costs nearly the same at
   start — voices allocate lazily on first use. Radios off leaves ~100 KiB

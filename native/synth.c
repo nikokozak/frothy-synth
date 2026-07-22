@@ -350,14 +350,14 @@ fr_err_t fr_lib_synth_envelope(fr_runtime_t *runtime, const fr_tagged_t *args,
   }
 
   /* AMY breakpoint set 0 gates amplitude by default (amp_coefs[COEF_EG0]).
-   * Times are ms since note-on except the last pair, which runs from
-   * note-off: classic ADSR is exactly three breakpoints. */
+   * Breakpoint times are per-segment DURATIONS (envelope.c sums them); the
+   * last segment runs from note-off. Classic ADSR is exactly three. */
   event = amy_default_event();
   event.time = 0;
   event.osc = (uint16_t)oscillator;
   event.eg0_times[0] = (uint32_t)attack;
   event.eg0_values[0] = 1.0f;
-  event.eg0_times[1] = (uint32_t)(attack + decay);
+  event.eg0_times[1] = (uint32_t)decay;
   event.eg0_values[1] = (float)sustain / (float)FR_SYNTH_LEVEL_SCALE;
   event.eg0_times[2] = (uint32_t)release;
   event.eg0_values[2] = 0.0f;

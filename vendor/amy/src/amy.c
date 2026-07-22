@@ -564,6 +564,15 @@ void add_delta_to_queue(struct delta *d, struct delta **queue) {
         amy_global.delta_qsize++;
 
     struct delta *new_d = delta_get(d);
+    if (new_d == NULL) {
+        // Frothy: pool exhausted -- drop this delta rather than crash. Undo
+        // the decorative queue count and let the caller's event degrade.
+        if (queue == &amy_global.delta_queue)
+            amy_global.delta_qsize--;
+        amy_release_lock();
+        AMY_PROFILE_STOP(ADD_DELTA_TO_QUEUE)
+        return;
+    }
 
     // insert it into the sorted list for fast playback
     struct delta **pptr = queue;
@@ -2173,21 +2182,26 @@ void amy_reset_sysclock() {
 
 struct delta *free_deltas_pool = NULL;
 
-#define MAX_DELTA_BLOCKS 16
+// Frothy's surface schedules scalar events, not AMY's full patch traffic.
+// Upstream's 2048-delta first block is a single 40 KiB contiguous
+// allocation; on the classic ESP32 image (largest free block ~53 KiB) it
+// starved the 16 KiB audio-task stack and start failed. The pool grows one
+// block at a time on demand (delta_get), so a small block trades extra
+// mallocs under load for a start that fits. MAX_DELTA_BLOCKS scales
+// inversely to preserve upstream's 32,768-delta logical ceiling: exhausting
+// it aborts the device, and long-range scheduling (each note-on carries
+// several deltas) reaches thousands of queued deltas legitimately.
+#define DELTA_BLOCK_SIZE 256
+#define MAX_DELTA_BLOCKS (32768 / DELTA_BLOCK_SIZE)
 struct delta *delta_blocks[MAX_DELTA_BLOCKS];
 int next_delta_block = 0;
 
-// Frothy's sine-only surface schedules a handful of scalar events, not
-// AMY's full patch traffic. Upstream's 2048-delta first block is a single
-// 40 KiB contiguous allocation; on the classic ESP32 image (largest free
-// block ~53 KiB) it starved the 16 KiB audio-task stack and start failed.
-// The pool already grows one block at a time on demand (delta_get), so a
-// small block only costs extra mallocs under load, not correctness.
-#define DELTA_BLOCK_SIZE 256
-
 struct delta *deltas_pool_alloc(int max_delta_pool_size, struct delta *tail) {
+    // Frothy: growth is allowed to fail (heap pressure on-device); the caller
+    // drops the event instead of dereferencing NULL.
     struct delta *new_pool = (struct delta *)malloc_caps(max_delta_pool_size * sizeof(struct delta),
                                                          amy_global.config.ram_caps_synth);
+    if (new_pool == NULL) return NULL;
     struct delta *d = new_pool;
     // Link all the deltas together
     for (int i = 1; i < max_delta_pool_size; ++i) {
@@ -2203,12 +2217,19 @@ struct delta *deltas_pool_alloc(int max_delta_pool_size, struct delta *tail) {
 }
 
 void deltas_add_pool_block(void) {
-    //fprintf(stderr, "deltas_add_pool_block %d\n", next_delta_block);
+    // Frothy: exhaustion (block cap or failed malloc) is soft. The pool stays
+    // as-is, delta_get returns NULL, and the event is dropped -- an
+    // over-scheduled instrument loses a note; it must never abort the device.
     if (next_delta_block >= MAX_DELTA_BLOCKS) {
-        fprintf(stderr, "**PANIC: Ran out of deltas (%d blocks of %d deltas)\n", MAX_DELTA_BLOCKS, DELTA_BLOCK_SIZE);
-        abort();
+        fprintf(stderr, "deltas: block cap reached (%d x %d); dropping\n", MAX_DELTA_BLOCKS, DELTA_BLOCK_SIZE);
+        return;
     }
-    free_deltas_pool = delta_blocks[next_delta_block++] = deltas_pool_alloc(DELTA_BLOCK_SIZE, free_deltas_pool);
+    struct delta *pool = deltas_pool_alloc(DELTA_BLOCK_SIZE, free_deltas_pool);
+    if (pool == NULL) {
+        fprintf(stderr, "deltas: pool growth failed (heap); dropping\n");
+        return;
+    }
+    free_deltas_pool = delta_blocks[next_delta_block++] = pool;
 }
 
 void deltas_pool_init() {
@@ -2231,6 +2252,7 @@ struct delta *delta_get(struct delta *from) {
         deltas_add_pool_block();
         d = free_deltas_pool;
     }
+    if (d == NULL) return NULL;  // Frothy: pool cannot grow; caller drops.
     free_deltas_pool = d->next;
     if (from != NULL) {
         d->data.i = from->data.i;
