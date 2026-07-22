@@ -53,9 +53,12 @@ Errors: out-of-range arguments return `bad value`; any word before
 `capacity exceeded` and leaves the board running. If `synth.stop` ever
 returns `io error` (audio task missed its deadline), call `synth.stop:`
 again — the retry completes the teardown. Scheduled events are queued in
-RAM (~20 bytes each): scheduling more than the heap holds drops the excess
-with a `deltas:` line on serial and keeps playing — hundreds of pending
-events are fine, thousands are not. `synth.stop` reclaims everything.
+RAM (a few dozen bytes each): scheduling more than the heap holds drops the
+excess with a `deltas:` line on serial and keeps playing — hundreds of
+pending events are fine, thousands are not. Drops are per-parameter, so an
+overloaded queue can lose part of an event; worst case a note-off is lost
+and a note keeps sounding until its next event or `synth.stop`, which
+reclaims everything.
 
 ## Examples
 
@@ -127,14 +130,14 @@ build prints the exact command).
 
 ## Measured (ESP32 DevKit V1)
 
-- Flash: the library adds ~120 KiB. Against the 2 MiB app partition (core
-  releases after the flash-floor raise), the whole image is ~554 KiB with
-  BLE and Wi-Fi gated off (74% headroom) and ~1,425 KiB with both radios on
-  (32%). On the older 1.5 MiB partition those become 64% and 7%.
-- Heap: `synth.start` costs ~66 KiB (16 KiB task stack, 5 KiB event pool,
-  ~6.5 KiB I2S DMA, the rest AMY). Capacity 8/16/32 costs nearly the same at
-  start — voices allocate lazily on first use. Radios off leaves ~100 KiB
-  free while running; radios on, ~30 KiB.
+- Flash: the library adds ~120 kB. Against the 2 MiB app partition (core
+  releases after the flash-floor raise), the whole image is ~554 kB with
+  BLE and Wi-Fi gated off (74% headroom) and ~1,425 kB with both radios on
+  (32%). On the older 1,536,000-byte partition those become 64% and 7%.
+- Heap: `synth.start` costs ~66 kB (16 KiB task stack, 5 kB event pool,
+  ~6.5 kB I2S DMA, the rest AMY). Capacity 8/16/32 costs nearly the same at
+  start — voices allocate lazily on first use. Radios off leaves ~100 kB
+  free while running; radios on, ~30 kB.
 - Stability: repeated start/envelope/filter/play/stop cycles show zero heap
   drift; a start that cannot fit fails with `capacity exceeded`, not a reset.
   An allocation failure inside AMY itself can still abort — treat oscillator
@@ -153,7 +156,7 @@ included; Frothy Synth is also MIT). Deviations from upstream, all measured
 on hardware:
 
 - PCM drum samples, piano partials, and the 391-entry factory patch bank
-  (~137 KiB of flash strings) are stubbed — unreachable from this surface.
+  (~137 kB of flash strings) are stubbed — unreachable from this surface.
 - The delta pool's first block is 256 events instead of 2048: upstream's
   40 KiB contiguous allocation starved the audio task stack on the classic
   ESP32.

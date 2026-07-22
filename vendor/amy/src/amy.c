@@ -2188,9 +2188,11 @@ struct delta *free_deltas_pool = NULL;
 // starved the 16 KiB audio-task stack and start failed. The pool grows one
 // block at a time on demand (delta_get), so a small block trades extra
 // mallocs under load for a start that fits. MAX_DELTA_BLOCKS scales
-// inversely to preserve upstream's 32,768-delta logical ceiling: exhausting
-// it aborts the device, and long-range scheduling (each note-on carries
-// several deltas) reaches thousands of queued deltas legitimately.
+// inversely to preserve upstream's 32,768-delta logical ceiling, because
+// long-range scheduling (each note-on carries several deltas) reaches
+// thousands of queued deltas legitimately. Exhaustion -- the cap or a
+// failed growth malloc -- is soft: the delta is dropped (see delta_get /
+// add_delta_to_queue), never an abort.
 #define DELTA_BLOCK_SIZE 256
 #define MAX_DELTA_BLOCKS (32768 / DELTA_BLOCK_SIZE)
 struct delta *delta_blocks[MAX_DELTA_BLOCKS];
