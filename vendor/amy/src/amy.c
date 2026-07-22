@@ -2177,7 +2177,13 @@ struct delta *free_deltas_pool = NULL;
 struct delta *delta_blocks[MAX_DELTA_BLOCKS];
 int next_delta_block = 0;
 
-#define DELTA_BLOCK_SIZE 2048
+// Frothy's sine-only surface schedules a handful of scalar events, not
+// AMY's full patch traffic. Upstream's 2048-delta first block is a single
+// 40 KiB contiguous allocation; on the classic ESP32 image (largest free
+// block ~53 KiB) it starved the 16 KiB audio-task stack and start failed.
+// The pool already grows one block at a time on demand (delta_get), so a
+// small block only costs extra mallocs under load, not correctness.
+#define DELTA_BLOCK_SIZE 256
 
 struct delta *deltas_pool_alloc(int max_delta_pool_size, struct delta *tail) {
     struct delta *new_pool = (struct delta *)malloc_caps(max_delta_pool_size * sizeof(struct delta),
