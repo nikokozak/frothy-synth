@@ -1,6 +1,7 @@
 name = "frothy-synth"
-version = "0.2.3"
+version = "0.2.4"
 boards = ["esp32_devkit_v1", "seeed_xiao_esp32s3"]
+requires = ["i2s"]
 
 [extension]
 sources = [
