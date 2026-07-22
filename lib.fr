@@ -1,4 +1,5 @@
--- The first hardware spike exposes one scheduled oscillator. Broader AMY
--- control belongs here only after timing and memory measurements earn it.
+-- Immediate convenience words. A zero timestamp is in the past by the time
+-- the engine sees it, and past events play immediately.
 
-to synth.sine with oscillator, hz, level [ here now is synth.now:; synth.sine-at: now, oscillator, hz, level ]
+to synth.sine with oscillator, hz, level [ synth.sine-at: 0, oscillator, hz, level ]
+to synth.wave with oscillator, wave, hz, level [ synth.wave-at: 0, oscillator, wave, hz, level ]

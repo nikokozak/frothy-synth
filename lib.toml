@@ -1,5 +1,5 @@
 name = "frothy-synth"
-version = "0.0.1"
+version = "0.2.0"
 boards = ["esp32_devkit_v1", "seeed_xiao_esp32s3"]
 
 [extension]
@@ -50,3 +50,18 @@ c_function = "fr_lib_synth_now"
 name = "synth.sine-at"
 arity = 4
 c_function = "fr_lib_synth_sine_at"
+
+[[natives]]
+name = "synth.wave-at"
+arity = 5
+c_function = "fr_lib_synth_wave_at"
+
+[[natives]]
+name = "synth.envelope"
+arity = 5
+c_function = "fr_lib_synth_envelope"
+
+[[natives]]
+name = "synth.filter"
+arity = 4
+c_function = "fr_lib_synth_filter"

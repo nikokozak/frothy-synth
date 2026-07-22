@@ -36,7 +36,18 @@ enum {
   FR_SYNTH_LEVEL_SCALE = 1000,
   FR_SYNTH_TASK_STACK_BYTES = 16 * 1024,
   FR_SYNTH_STOP_TIMEOUT_MS = 1000,
+  FR_SYNTH_MAX_WAVE = 4,
+  FR_SYNTH_MAX_ENVELOPE_MS = 60000,
+  FR_SYNTH_MAX_FILTER = 3,
+  FR_SYNTH_MAX_RESONANCE = 8000,
 };
+
+/* Frothy wave codes are a stable public surface; AMY's enum is not. */
+static const uint16_t fr_synth_waves[FR_SYNTH_MAX_WAVE + 1] = {
+    SINE, TRIANGLE, SAW_DOWN, PULSE, NOISE};
+
+static const uint8_t fr_synth_filters[FR_SYNTH_MAX_FILTER + 1] = {
+    FILTER_NONE, FILTER_LPF, FILTER_BPF, FILTER_HPF};
 
 static bool fr_synth_started;
 static uint16_t fr_synth_max_oscs;
@@ -249,13 +260,33 @@ fr_err_t fr_lib_synth_now(fr_runtime_t *runtime, const fr_tagged_t *args,
   return fr_tagged_encode_int((fr_int_t)now, out);
 }
 
+/* Shared body of sine-at (wave fixed to code 0) and wave-at. */
+static fr_err_t fr_synth_note_at(fr_int_t time, fr_int_t oscillator,
+                                 fr_int_t wave, fr_int_t hz, fr_int_t level) {
+  amy_event event;
+
+  if (time < 0 || oscillator < 0 || oscillator >= fr_synth_max_oscs ||
+      wave < 0 || wave > FR_SYNTH_MAX_WAVE || hz < 1 ||
+      hz > FR_SYNTH_MAX_HZ || level < 0 || level > FR_SYNTH_LEVEL_SCALE) {
+    return FR_ERR_DOMAIN;
+  }
+
+  event = amy_default_event();
+  event.time = (uint32_t)time;
+  event.osc = (uint16_t)oscillator;
+  event.wave = fr_synth_waves[wave];
+  event.freq_coefs[COEF_CONST] = (float)hz;
+  event.velocity = (float)level / (float)FR_SYNTH_LEVEL_SCALE;
+  amy_add_event(&event);
+  return FR_OK;
+}
+
 fr_err_t fr_lib_synth_sine_at(fr_runtime_t *runtime, const fr_tagged_t *args,
                               uint8_t arg_count, fr_tagged_t *out) {
   fr_int_t time = 0;
   fr_int_t oscillator = 0;
   fr_int_t hz = 0;
   fr_int_t level = 0;
-  amy_event event;
 
   FR_TRY(fr_synth_check_call(runtime, args, arg_count, 4, out));
   if (!fr_synth_started || !atomic_load(&fr_synth_audio_running)) {
@@ -265,17 +296,104 @@ fr_err_t fr_lib_synth_sine_at(fr_runtime_t *runtime, const fr_tagged_t *args,
   FR_TRY(fr_synth_decode_int(args, 1, &oscillator));
   FR_TRY(fr_synth_decode_int(args, 2, &hz));
   FR_TRY(fr_synth_decode_int(args, 3, &level));
-  if (time < 0 || oscillator < 0 || oscillator >= fr_synth_max_oscs || hz < 1 ||
-      hz > FR_SYNTH_MAX_HZ || level < 0 || level > FR_SYNTH_LEVEL_SCALE) {
+  FR_TRY(fr_synth_note_at(time, oscillator, 0, hz, level));
+  *out = fr_tagged_nil();
+  return FR_OK;
+}
+
+fr_err_t fr_lib_synth_wave_at(fr_runtime_t *runtime, const fr_tagged_t *args,
+                              uint8_t arg_count, fr_tagged_t *out) {
+  fr_int_t time = 0;
+  fr_int_t oscillator = 0;
+  fr_int_t wave = 0;
+  fr_int_t hz = 0;
+  fr_int_t level = 0;
+
+  FR_TRY(fr_synth_check_call(runtime, args, arg_count, 5, out));
+  if (!fr_synth_started || !atomic_load(&fr_synth_audio_running)) {
+    return FR_ERR_INVALID;
+  }
+  FR_TRY(fr_synth_decode_int(args, 0, &time));
+  FR_TRY(fr_synth_decode_int(args, 1, &oscillator));
+  FR_TRY(fr_synth_decode_int(args, 2, &wave));
+  FR_TRY(fr_synth_decode_int(args, 3, &hz));
+  FR_TRY(fr_synth_decode_int(args, 4, &level));
+  FR_TRY(fr_synth_note_at(time, oscillator, wave, hz, level));
+  *out = fr_tagged_nil();
+  return FR_OK;
+}
+
+fr_err_t fr_lib_synth_envelope(fr_runtime_t *runtime, const fr_tagged_t *args,
+                               uint8_t arg_count, fr_tagged_t *out) {
+  fr_int_t oscillator = 0;
+  fr_int_t attack = 0;
+  fr_int_t decay = 0;
+  fr_int_t sustain = 0;
+  fr_int_t release = 0;
+  amy_event event;
+
+  FR_TRY(fr_synth_check_call(runtime, args, arg_count, 5, out));
+  if (!fr_synth_started || !atomic_load(&fr_synth_audio_running)) {
+    return FR_ERR_INVALID;
+  }
+  FR_TRY(fr_synth_decode_int(args, 0, &oscillator));
+  FR_TRY(fr_synth_decode_int(args, 1, &attack));
+  FR_TRY(fr_synth_decode_int(args, 2, &decay));
+  FR_TRY(fr_synth_decode_int(args, 3, &sustain));
+  FR_TRY(fr_synth_decode_int(args, 4, &release));
+  if (oscillator < 0 || oscillator >= fr_synth_max_oscs || attack < 0 ||
+      attack > FR_SYNTH_MAX_ENVELOPE_MS || decay < 0 ||
+      decay > FR_SYNTH_MAX_ENVELOPE_MS || sustain < 0 ||
+      sustain > FR_SYNTH_LEVEL_SCALE || release < 0 ||
+      release > FR_SYNTH_MAX_ENVELOPE_MS) {
+    return FR_ERR_DOMAIN;
+  }
+
+  /* AMY breakpoint set 0 gates amplitude by default (amp_coefs[COEF_EG0]).
+   * Times are ms since note-on except the last pair, which runs from
+   * note-off: classic ADSR is exactly three breakpoints. */
+  event = amy_default_event();
+  event.time = 0;
+  event.osc = (uint16_t)oscillator;
+  event.eg0_times[0] = (uint32_t)attack;
+  event.eg0_values[0] = 1.0f;
+  event.eg0_times[1] = (uint32_t)(attack + decay);
+  event.eg0_values[1] = (float)sustain / (float)FR_SYNTH_LEVEL_SCALE;
+  event.eg0_times[2] = (uint32_t)release;
+  event.eg0_values[2] = 0.0f;
+  amy_add_event(&event);
+  *out = fr_tagged_nil();
+  return FR_OK;
+}
+
+fr_err_t fr_lib_synth_filter(fr_runtime_t *runtime, const fr_tagged_t *args,
+                             uint8_t arg_count, fr_tagged_t *out) {
+  fr_int_t oscillator = 0;
+  fr_int_t type = 0;
+  fr_int_t hz = 0;
+  fr_int_t resonance = 0;
+  amy_event event;
+
+  FR_TRY(fr_synth_check_call(runtime, args, arg_count, 4, out));
+  if (!fr_synth_started || !atomic_load(&fr_synth_audio_running)) {
+    return FR_ERR_INVALID;
+  }
+  FR_TRY(fr_synth_decode_int(args, 0, &oscillator));
+  FR_TRY(fr_synth_decode_int(args, 1, &type));
+  FR_TRY(fr_synth_decode_int(args, 2, &hz));
+  FR_TRY(fr_synth_decode_int(args, 3, &resonance));
+  if (oscillator < 0 || oscillator >= fr_synth_max_oscs || type < 0 ||
+      type > FR_SYNTH_MAX_FILTER || hz < 1 || hz > FR_SYNTH_MAX_HZ ||
+      resonance < 0 || resonance > FR_SYNTH_MAX_RESONANCE) {
     return FR_ERR_DOMAIN;
   }
 
   event = amy_default_event();
-  event.time = (uint32_t)time;
+  event.time = 0;
   event.osc = (uint16_t)oscillator;
-  event.wave = SINE;
-  event.freq_coefs[COEF_CONST] = (float)hz;
-  event.velocity = (float)level / (float)FR_SYNTH_LEVEL_SCALE;
+  event.filter_type = fr_synth_filters[type];
+  event.filter_freq_coefs[COEF_CONST] = (float)hz;
+  event.resonance = (float)resonance / (float)FR_SYNTH_LEVEL_SCALE;
   amy_add_event(&event);
   *out = fr_tagged_nil();
   return FR_OK;
